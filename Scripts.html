@@ -1,0 +1,851 @@
+<script>
+    const SCRIPT_URL = '<?= ScriptApp.getService().getUrl() ?>';
+    let ADMIN_WA_NUMBER = '5213442533581';
+    let dbProducts = [], cart = [], mockOrders = [], isAdmin = false, cmsData = {}, heroSlides = [], heroSwiper = null, currentSlideIndex = null;
+    let cropper, cropTarget = null, draggedIndex = null;
+
+    window.addEventListener('scroll', () => {
+        const header = document.getElementById('header');
+        header.classList.toggle('scrolled', window.scrollY > 50);
+    });
+
+    function showView(id) {
+        if (id === 'admin' && !isAdmin) { loginAdmin(); return; }
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById('view-' + id).classList.add('active');
+        document.querySelectorAll('.nav-links a').forEach(a => a.classList.remove('active'));
+        const navItem = document.getElementById('nav-' + id);
+        if (navItem) navItem.classList.add('active');
+        if (id === 'admin') updateAdminPanel();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function loginAdmin() {
+        Swal.fire({
+            title: 'Acceso Staff', input: 'password', inputPlaceholder: 'Ingresa la contraseña',
+            showCancelButton: true, confirmButtonText: 'Ingresar', cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#E8A598', background: '#FDF8F5'
+        }).then(r => {
+            if (r.value === 'admin123') {
+                isAdmin = true;
+                document.getElementById('admin-nav-item').style.display = 'block';
+                showView('admin');
+            } else if (r.isConfirmed) {
+                Swal.fire({ icon: 'error', title: 'Contraseña incorrecta', confirmButtonColor: '#E8A598', background: '#FDF8F5' });
+            }
+        });
+    }
+
+    function sanitizeImgUrl(url) {
+        if (!url) return 'https://images.unsplash.com/photo-1517433670267-08bbd4be890f?w=500';
+        if (url.includes('drive.google.com/uc')) {
+            const id = url.split('id=')[1];
+            if (id) return `https://lh3.googleusercontent.com/d/${id}`;
+        }
+        return url;
+    }
+
+    function toggleCart(show) {
+        document.getElementById('cart-drawer').classList.toggle('active', show);
+        document.getElementById('overlay').classList.toggle('active', show);
+        document.body.style.overflow = show ? 'hidden' : '';
+    }
+
+    // ===== CARRUSEL SLIDES =====
+    function initHeroSwiper() {
+        if (heroSwiper) {
+            heroSwiper.destroy(true, true);
+            heroSwiper = null;
+        }
+
+        if (heroSlides.length === 0) return;
+
+        heroSwiper = new Swiper('.hero-swiper', {
+            loop: heroSlides.length > 1,
+            autoplay: heroSlides.length > 1 ? {
+                delay: 5000,
+                disableOnInteraction: false,
+                pauseOnMouseEnter: true
+            } : false,
+            pagination: {
+                el: '.swiper-pagination',
+                clickable: true,
+                dynamicBullets: true
+            },
+            navigation: {
+                nextEl: '.swiper-button-next',
+                prevEl: '.swiper-button-prev'
+            },
+            effect: 'fade',
+            fadeEffect: { crossFade: true },
+            speed: 1000,
+            grabCursor: true
+        });
+    }
+
+    function renderHeroSlides() {
+        const container = document.getElementById('hero-slides');
+        if (!container) return;
+        container.innerHTML = '';
+
+        const slidesToRender = heroSlides.length > 0 ? heroSlides : [{
+            id: 'default',
+            image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=1200',
+            title: 'Sabores Artesanales',
+            subtitle: 'Pan recién horneado con amor y tradición',
+            buttonText: 'Ver Tienda',
+            buttonLink: 'tienda'
+        }];
+
+        slidesToRender.forEach((slide, index) => {
+            const slideEl = document.createElement('div');
+            slideEl.className = 'swiper-slide';
+            const sImg = sanitizeImgUrl(slide.image);
+            slideEl.innerHTML = `
+                <img src="${sImg}" class="slide-bg" alt="${slide.title}" 
+                     onerror="this.src='https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=1200'"
+                     loading="${index === 0 ? 'eager' : 'lazy'}">
+                <div class="hero-overlay">
+                    <h1>${slide.title}</h1>
+                    <p>${slide.subtitle}</p>
+                    <button class="btn-primary" onclick="showView('${slide.buttonLink || 'tienda'}')">
+                        <i class="fas fa-store"></i> ${slide.buttonText || 'Ver Tienda'}
+                    </button>
+                </div>`;
+            container.appendChild(slideEl);
+        });
+
+        setTimeout(() => initHeroSwiper(), 100);
+    }
+
+    function renderSlidesManager() {
+        const container = document.getElementById('slides-container');
+        container.innerHTML = '';
+        heroSlides.forEach((slide, index) => {
+            const slideEl = document.createElement('div');
+            slideEl.className = 'slide-item';
+            slideEl.setAttribute('draggable', 'true');
+            slideEl.dataset.index = index;
+            slideEl.innerHTML = `
+                <div class="slide-number">${index + 1}</div>
+                <img src="${slide.image}" class="slide-preview" alt="">
+                <div class="slide-info">
+                    <div class="slide-title">${slide.title}</div>
+                    <div class="slide-subtitle">${slide.subtitle}</div>
+                </div>
+                <div class="slide-actions">
+                    <button class="slide-action-btn move" title="Arrastrar"><i class="fas fa-grip-vertical"></i></button>
+                    <button class="slide-action-btn edit" onclick="editSlide(${index})" title="Editar"><i class="fas fa-edit"></i></button>
+                    <button class="slide-action-btn delete" onclick="deleteSlide(${index})" title="Eliminar"><i class="fas fa-trash"></i></button>
+                </div>`;
+            slideEl.addEventListener('dragstart', handleDragStart);
+            slideEl.addEventListener('dragover', handleDragOver);
+            slideEl.addEventListener('drop', handleDrop);
+            slideEl.addEventListener('dragend', handleDragEnd);
+            container.appendChild(slideEl);
+        });
+    }
+
+    function handleDragStart(e) { draggedIndex = parseInt(this.dataset.index); this.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
+    function handleDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+    function handleDrop(e) {
+        e.preventDefault();
+        const dropIndex = parseInt(this.dataset.index);
+        if (draggedIndex !== null && draggedIndex !== dropIndex) {
+            const draggedSlide = heroSlides[draggedIndex];
+            heroSlides.splice(draggedIndex, 1);
+            heroSlides.splice(dropIndex, 0, draggedSlide);
+            renderSlidesManager();
+        }
+    }
+    function handleDragEnd() { this.classList.remove('dragging'); draggedIndex = null; }
+
+    function addNewSlide() {
+        if (heroSlides.length >= 5) {
+            Swal.fire({ icon: 'warning', title: 'Límite alcanzado', text: 'Máximo 5 slides permitidos', confirmButtonColor: '#E8A598', background: '#FDF8F5' });
+            return;
+        }
+        currentSlideIndex = null;
+        openSlideEditor();
+    }
+
+    function editSlide(index) { currentSlideIndex = index; openSlideEditor(heroSlides[index]); }
+
+    function openSlideEditor(slide = null) {
+        const isEdit = slide !== null;
+        Swal.fire({
+            title: isEdit ? 'Editar Slide' : 'Nuevo Slide',
+            html: `
+                <div style="text-align:left;">
+                    <label style="font-size:12px; color:#6B5B54; font-weight:600;">Título</label>
+                    <input id="slide-title" class="swal2-input" value="${slide?.title || ''}" placeholder="Ej: Sabores Artesanales" style="margin:5px 0 15px; width:90%;">
+                    <label style="font-size:12px; color:#6B5B54; font-weight:600;">Subtítulo</label>
+                    <input id="slide-subtitle" class="swal2-input" value="${slide?.subtitle || ''}" placeholder="Ej: Pan recién horneado..." style="margin:5px 0 15px; width:90%;">
+                    <label style="font-size:12px; color:#6B5B54; font-weight:600;">Texto del Botón</label>
+                    <input id="slide-button" class="swal2-input" value="${slide?.buttonText || 'Ver Tienda'}" placeholder="Ver Tienda" style="margin:5px 0 15px; width:90%;">
+                    <label style="font-size:12px; color:#6B5B54; font-weight:600; display:block; margin-bottom:10px;">📸 Imagen de Fondo</label>
+                    <div style="display:flex; flex-direction:column; gap:10px; align-items:center; background:var(--bg); padding:15px; border-radius:12px; margin-bottom:15px;">
+                        <img id="slide-img-preview" src="${slide?.image ? sanitizeImgUrl(slide.image) : ''}" style="width:150px; height:85px; object-fit:cover; border-radius:8px; ${slide?.image ? '' : 'display:none;'}">
+                        <button id="slide-file-btn" type="button" style="background:var(--primary); color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;">
+                            <i class="fas fa-camera"></i> ${slide?.image ? 'Cambiar Imagen' : 'Subir Imagen'}
+                        </button>
+                        <input id="slide-file" type="file" accept="image/*" style="display:none;">
+                    </div>
+                </div>`,
+            confirmButtonText: '<i class="fas fa-save"></i> Guardar', confirmButtonColor: '#E8A598', background: '#FDF8F5',
+            showCancelButton: true, cancelButtonText: 'Cancelar',
+            didOpen: () => {
+                document.getElementById('slide-file-btn').onclick = () => document.getElementById('slide-file').click();
+                document.getElementById('slide-file').onchange = async (e) => {
+                    if (e.target.files[0]) {
+                        cropTarget = 'slide';
+                        startCrop(await processImageUpload(e.target.files[0]), 16 / 9);
+                    }
+                };
+            },
+            preConfirm: () => {
+                const preview = document.getElementById('slide-img-preview');
+                if (!preview.src && !preview.dataset.base64) { Swal.showValidationMessage('Por favor sube una imagen'); return false; }
+                return { title: document.getElementById('slide-title').value || 'Sin título', subtitle: document.getElementById('slide-subtitle').value || '', buttonText: document.getElementById('slide-button').value || 'Ver Tienda', image: preview.dataset.base64 || preview.src, buttonLink: 'tienda' };
+            }
+        }).then(r => {
+            if (r.isConfirmed) {
+                if (isEdit) heroSlides[currentSlideIndex] = { ...heroSlides[currentSlideIndex], ...r.value };
+                else heroSlides.push({ id: Date.now(), ...r.value });
+                renderSlidesManager();
+                Swal.fire({ icon: 'success', title: 'Guardado', timer: 1500, showConfirmButton: false, background: '#FDF8F5' });
+            }
+        });
+    }
+
+    function deleteSlide(index) {
+        Swal.fire({ title: '¿Eliminar slide?', text: 'Esta acción no se puede deshacer', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar', confirmButtonColor: '#E57373', background: '#FDF8F5' }).then(r => {
+            if (r.isConfirmed) { heroSlides.splice(index, 1); renderSlidesManager(); Swal.fire({ icon: 'success', title: 'Eliminado', timer: 1500, showConfirmButton: false, background: '#FDF8F5' }); }
+        });
+    }
+
+    // ===== PRODUCTOS =====
+    function renderGrid(id, list) {
+        const container = document.getElementById(id);
+        if (!container) return;
+        container.innerHTML = '';
+        list.forEach(p => {
+            const card = document.createElement('div');
+            card.className = 'product-card' + (p.stock <= 0 ? ' out-of-stock' : '');
+            card.setAttribute('data-id', p.id);
+            card.onclick = () => openProductDetail(p.id);
+            const pImg = sanitizeImgUrl(p.img);
+            card.innerHTML = `
+                <div class="p-qty-in-cart" data-id="${p.id}">0</div>
+                <div class="p-img-container">
+                    <img src="${pImg}" class="p-img" alt="${p.name}" loading="lazy" 
+                         onerror="this.src='https://images.unsplash.com/photo-1517433670267-08bbd4be890f?w=500'">
+                </div>
+                <div class="p-content">
+                    <h3 class="p-name">${p.name}</h3>
+                    <p class="p-price">$${p.price}</p>
+                    <p class="p-stock ${p.stock <= 0 ? 'low' : p.stock <= 5 ? 'low' : ''}">
+                        ${p.stock <= 0 ? 'SIN STOCK' : 'STOCK: ' + p.stock + ' UN.'}
+                    </p>
+                    <div class="qty-selector" onclick="event.stopPropagation()">
+                        <button class="qty-btn" onclick="changeQtyUI(this,-1,false)"><i class="fas fa-minus"></i></button>
+                        <span class="qty-val">1</span>
+                        <button class="qty-btn" onclick="changeQtyUI(this,1,false)"><i class="fas fa-plus"></i></button>
+                    </div>
+                    <button class="btn-add" onclick="event.stopPropagation(); addToCart('${p.id}')" ${p.stock <= 0 ? 'disabled' : ''}>
+                        ${p.stock <= 0 ? 'AGOTADO' : 'AÑADIR AL CARRITO'}
+                    </button>
+                </div>`;
+            container.appendChild(card);
+        });
+        updateAllBadges();
+    }
+
+    function changeQtyUI(btn, delta, isModal = false) {
+        const el = btn.parentElement.querySelector('.qty-val');
+        let val = parseInt(el.innerText) + delta;
+        if (val < 1) val = 1;
+        el.innerText = val;
+    }
+
+    function addToCart(pid, qtyFromModal) {
+        const product = dbProducts.find(x => String(x.id) === String(pid));
+
+        if (!product) {
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Producto no encontrado en el catálogo.', confirmButtonColor: '#E8A598', background: '#FDF8F5' });
+            return;
+        }
+
+        if (product.stock <= 0) {
+            Swal.fire({ icon: 'warning', title: 'Agotado', text: 'Lo sentimos, este producto no tiene stock disponible.', confirmButtonColor: '#E8A598', background: '#FDF8F5' });
+            return;
+        }
+
+        const qty = qtyFromModal || parseInt(document.querySelector(`.product-card[data-id="${pid}"] .qty-val`)?.innerText || "1");
+        const existingItem = cart.find(x => String(x.id) === String(pid));
+
+        if (((existingItem ? existingItem.qty : 0) + qty) > product.stock) {
+            Swal.fire({ icon: 'warning', title: 'Stock insuficiente', text: `Solo quedan ${product.stock} unidades disponibles.`, confirmButtonColor: '#E8A598', background: '#FDF8F5' });
+            return;
+        }
+
+        if (existingItem) existingItem.qty += qty;
+        else cart.push({ ...product, qty });
+
+        updateCartUI();
+        updateAllBadges();
+
+        Swal.fire({
+            title: '¡Añadido!',
+            text: `${product.name} agregado al carrito`,
+            icon: 'success',
+            toast: true,
+            position: 'top-end',
+            timer: 2000,
+            showConfirmButton: false,
+            background: '#FDF8F5'
+        });
+    }
+
+    function updateCartUI() {
+        const totalQty = cart.reduce((sum, item) => sum + item.qty, 0);
+        document.getElementById('cart-count').innerText = totalQty;
+        const container = document.getElementById('cart-items');
+        if (cart.length === 0) {
+            container.innerHTML = `<div class="cart-empty"><i class="fas fa-shopping-basket"></i><p>Tu carrito está vacío</p><p style="font-size: 14px; margin-top: 8px;">¡Agrega algunos productos!</p></div>`;
+            document.getElementById('shipping-details').style.display = 'none';
+            document.getElementById('cart-footer').style.display = 'none';
+            return;
+        }
+        container.innerHTML = '';
+        let total = 0;
+        cart.forEach((item, index) => {
+            total += item.price * item.qty;
+            container.innerHTML += `
+                <div class="cart-item">
+                    <img src="${sanitizeImgUrl(item.img)}" class="cart-item-img" alt="${item.name}">
+                    <div class="cart-item-info">
+                        <div class="cart-item-name">${item.name}</div>
+                        <div class="cart-item-price">$${item.price}</div>
+                        <div class="cart-item-qty">Cantidad: ${item.qty}</div>
+                    </div>
+                    <button class="cart-item-remove" onclick="removeCart(${index})" title="Eliminar"><i class="fas fa-trash-alt"></i></button>
+                </div>`;
+        });
+        document.getElementById('cart-total').innerText = '$' + total.toLocaleString();
+        document.getElementById('shipping-details').style.display = 'block';
+        document.getElementById('cart-footer').style.display = 'block';
+    }
+
+    function removeCart(index) { cart.splice(index, 1); updateCartUI(); updateAllBadges(); }
+
+    function updateAllBadges() {
+        dbProducts.forEach(p => {
+            const item = cart.find(x => String(x.id) === String(p.id));
+            document.querySelectorAll(`.p-qty-in-cart[data-id="${p.id}"]`).forEach(badge => {
+                badge.innerText = item ? item.qty : 0;
+                badge.className = 'p-qty-in-cart' + (item ? ' visible' : '');
+            });
+        });
+    }
+
+    // PUENTE GAS NATIVO (REEMPLAZA FETCH)
+    async function gsCall(action, data) {
+        return new Promise((resolve, reject) => {
+            google.script.run
+                .withSuccessHandler(resolve)
+                .withFailureHandler(err => {
+                    console.error('GAS Error:', err);
+                    reject(err);
+                })
+                .runAction({ action: action, ...data });
+        });
+    }
+
+    function updateAdminPanel() {
+        const list = document.getElementById('admin-orders-list');
+        const filter = document.getElementById('status-filter')?.value || 'todos';
+        list.innerHTML = '';
+        let totalSales = 0;
+
+        mockOrders.slice().reverse().forEach(order => {
+            const status = getV(order, ['est', 'stat', 'condition']);
+            if (filter !== 'todos' && status !== filter) return;
+
+            const amountVal = getV(order, ['total', 'monto', 'price']);
+            const amount = parseFloat(amountVal) || 0;
+            totalSales += amount;
+
+            let itemsText = '---';
+            const rawItems = getV(order, ['resumen', 'produc', 'items', 'content']);
+            if (rawItems && rawItems !== '---') {
+                try {
+                    const parsed = typeof rawItems === 'string' ? JSON.parse(rawItems) : rawItems;
+                    if (Array.isArray(parsed)) {
+                        itemsText = parsed.map(it => `• ${it.name} x${it.qty}`).join('<br>');
+                    } else {
+                        itemsText = rawItems;
+                    }
+                } catch (e) {
+                    itemsText = rawItems;
+                }
+            }
+
+            const rawDate = getV(order, ['fech', 'date', 'momento', 'time']);
+            let formattedDate = rawDate;
+            if (rawDate && rawDate !== '---') {
+                try {
+                    const d = new Date(rawDate);
+                    if (!isNaN(d.getTime())) {
+                        formattedDate = `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                    }
+                } catch (e) { }
+            }
+
+            const clientName = getV(order, ['cliente', 'client', 'nombr', 'nombre', 'customer']);
+            const isDelivered = status === 'Entregado';
+            const orderId = getV(order, ['idpedido', 'id', 'nro', 'id_pedido']);
+
+            list.innerHTML += `
+                <tr>
+                    <td><strong>#${orderId}</strong></td>
+                    <td>${clientName !== '---' && clientName !== '' ? clientName : '<span style="color:#ccc;">(Sin nombre)</span>'}</td>
+                    <td><a href="https://wa.me/${getV(order, ['tel', 'what', 'cel', 'phone'])}" target="_blank" style="color: var(--success);"><i class="fab fa-whatsapp"></i> ${getV(order, ['tel', 'what'])}</a></td>
+                    <td>${getV(order, ['direc', 'ubic', 'addr'])}</td>
+                    <td><div style="max-height:80px; overflow:auto; font-size:12px; line-height:1.4; background:rgba(0,0,0,0.03); padding:5px; border-radius:4px;">${itemsText}</div></td>
+                    <td><strong>$${amount.toLocaleString()}</strong></td>
+                    <td>${formattedDate}</td>
+                    <td><span class="status-badge status-${isDelivered ? 'done' : 'pending'}">${status}</span></td>
+                    <td>
+                        <div class="action-btns">
+                            <button class="action-btn action-btn-success" onclick="markDone('${orderId}')" title="Marcar como entregado"><i class="fas fa-check"></i></button>
+                            <button class="action-btn action-btn-primary" onclick="showOrderInvoice('${orderId}')" title="Ver factura"><i class="fas fa-file-invoice"></i></button>
+                            <button class="action-btn action-btn-danger" onclick="deleteOrderAdmin('${orderId}')" title="Eliminar pedido"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </td>
+                </tr>`;
+        });
+        document.getElementById('stat-total').innerText = '$' + totalSales.toLocaleString();
+        document.getElementById('stat-orders').innerText = mockOrders.length;
+        document.getElementById('stat-low-stock').innerText = dbProducts.filter(p => p.stock <= 5).length;
+        renderAdminProducts();
+    }
+
+    function getV(obj, tags) {
+        if (!obj) return '---';
+        const keys = Object.keys(obj);
+        for (let tag of tags) {
+            const exact = keys.find(k => k.toLowerCase() === tag.toLowerCase());
+            if (exact && obj[exact] !== undefined && obj[exact] !== null) return obj[exact];
+        }
+        for (let tag of tags) {
+            const lt = tag.toLowerCase();
+            for (let k of keys) {
+                const lk = k.toLowerCase();
+                if (lt === 'est' && (lk.includes('fech') || lk.includes('date'))) continue;
+                if (lt === 'fech' && (lk.includes('est') || lk.includes('stat'))) continue;
+                if (lk.includes(lt)) return obj[k];
+            }
+        }
+        return '---';
+    }
+
+    async function markDone(id) {
+        const cleanId = String(id).replace('#', '').trim().toUpperCase();
+        Swal.fire({
+            title: 'Actualizando pedido...',
+            text: `Pedido: ${cleanId}`,
+            didOpen: () => Swal.showLoading(),
+            allowOutsideClick: false,
+            background: '#FDF8F5'
+        });
+
+        const orderIndex = mockOrders.findIndex(x => {
+            const orderId = getV(x, ['idpedido', 'id', 'nro', 'ID Pedido', 'id pedido']);
+            return String(orderId).trim().toUpperCase() === cleanId;
+        });
+
+        if (orderIndex === -1) {
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Pedido no encontrado en la lista local', confirmButtonColor: '#E8A598', background: '#FDF8F5' });
+            return;
+        }
+
+        const order = mockOrders[orderIndex];
+        const statusKey = Object.keys(order).find(k => {
+            const normalized = k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return normalized.includes('est') || normalized.includes('stat');
+        });
+
+        if (statusKey) {
+            await gsCall('updateOrderStatus', { orderId: cleanId, status: 'Entregado' });
+            mockOrders[orderIndex][statusKey] = 'Entregado';
+            updateAdminPanel();
+            Swal.fire({ icon: 'success', title: '¡Pedido Entregado!', text: 'El estado se ha actualizado correctamente', confirmButtonColor: '#E8A598', background: '#FDF8F5', timer: 2000 });
+        } else {
+            Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo identificar el campo de estado', confirmButtonColor: '#E8A598', background: '#FDF8F5' });
+        }
+    }
+
+    function showOrderInvoice(id) {
+        const order = mockOrders.find(x => String(getV(x, ['id', 'nro'])) === String(id));
+        if (!order) return;
+        let itemsText = '---';
+        const rawItems = getV(order, ['produc', 'items']);
+        if (rawItems && rawItems !== '---') {
+            try {
+                const parsed = typeof rawItems === 'string' ? JSON.parse(rawItems) : rawItems;
+                if (Array.isArray(parsed)) {
+                    itemsText = parsed.map(it => `• ${it.name} (x${it.qty})`).join('\n');
+                } else {
+                    itemsText = rawItems;
+                }
+            } catch (e) {
+                itemsText = rawItems;
+            }
+        }
+
+        Swal.fire({
+            title: `Factura #${id}`,
+            html: `<div style="text-align:left; font-family:'Courier New', monospace; font-size:13px; background:var(--bg); padding:20px; border-radius:12px; white-space:pre-wrap; line-height:1.6;"><strong style="font-size:16px; font-family:'Playfair Display', serif;">🥖 TANIA DIAZ - Panadería</strong>\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n📅 Fecha: ${getV(order, ['fech', 'date'])}\n👤 Cliente: ${getV(order, ['client', 'nombr'])}\n📱 WhatsApp: ${getV(order, ['tel', 'what'])}\n📍 Dirección: ${getV(order, ['direc', 'ubic'])}\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n🛒 PEDIDO:\n${itemsText}\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n💰 <strong style="font-size:15px;">TOTAL: $${getV(order, ['total', 'monto'])}</strong>\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n<i>¡Gracias por su compra! 🙏</i></div>`,
+            confirmButtonText: '<i class="fas fa-print"></i> Imprimir', showCancelButton: true, cancelButtonText: 'Cerrar', confirmButtonColor: '#E8A598', background: '#FDF8F5', width: 500
+        }).then(r => { if (r.isConfirmed) printOrderInvoice(id); });
+    }
+
+    function printOrderInvoice(id) {
+        const order = mockOrders.find(x => String(getV(x, ['id', 'nro'])) === String(id));
+        if (!order) return;
+        let itemsText = '---';
+        const rawItems = getV(order, ['produc', 'items']);
+        if (rawItems && rawItems !== '---') {
+            try {
+                const parsed = typeof rawItems === 'string' ? JSON.parse(rawItems) : rawItems;
+                if (Array.isArray(parsed)) {
+                    itemsText = parsed.map(it => `• ${it.name} (x${it.qty})`).join('\n');
+                } else {
+                    itemsText = rawItems;
+                }
+            } catch (e) {
+                itemsText = rawItems;
+            }
+        }
+        const win = window.open('', '', 'width=600,height=700');
+        win.document.write(`<html><head><title>Factura #${id}</title><style>body{font-family:'Courier New',monospace;padding:30px;background:#FDF8F5}h2{font-family:'Playfair Display',serif;color:#2C2420;border-bottom:3px solid #E8A598;padding-bottom:15px}.info{margin:20px 0;line-height:1.8}.info strong{color:#6B5B54}.total{font-size:20px;font-weight:bold;color:#E8A598;margin-top:20px;padding-top:15px;border-top:2px dashed #E8A598}pre{background:#FFF;padding:15px;border-radius:8px;white-space:pre-wrap}</style></head><body><h2>🥖 TANIA DIAZ - FACTURA #${id}</h2><div class="info"><p><strong>Fecha:</strong> ${getV(order, ['fech', 'date'])}</p><p><strong>Cliente:</strong> ${getV(order, ['client', 'nombr'])}</p><p><strong>WhatsApp:</strong> ${getV(order, ['tel', 'what'])}</p><p><strong>Dirección:</strong> ${getV(order, ['direc', 'ubic'])}</p></div><h3>Pedido:</h3><pre>${itemsText}</pre><div class="total">TOTAL: $${getV(order, ['total', 'monto'])}</div><p style="text-align:center;margin-top:30px;color:#6B5B54;">¡Gracias por su compra!</p><script>window.print();window.close()<\/script></body></html>`);
+        win.document.close();
+    }
+
+    function renderAdminProducts() {
+        const list = document.getElementById('admin-products-list');
+        list.innerHTML = '';
+        dbProducts.forEach(p => {
+            const pImg = sanitizeImgUrl(p.img);
+            list.innerHTML += `
+                <tr>
+                    <td><strong>#${p.id}</strong></td>
+                    <td><img src="${pImg}" style="width:50px; height:50px; object-fit:cover; border-radius:8px;" onerror="this.src='https://images.unsplash.com/photo-1517433670267-08bbd4be890f?w=200'"></td>
+                    <td>${p.name}</td>
+                    <td><strong>$${p.price}</strong></td>
+                    <td><span style="color: ${p.stock <= 5 ? '#E57373' : '#4CAF50'}; font-weight:600;">${p.stock}</span></td>
+                    <td>
+                        <div class="action-btns">
+                            <button class="action-btn action-btn-primary" onclick="editProduct('${p.id}')" title="Editar"><i class="fas fa-edit"></i></button>
+                            <button class="action-btn action-btn-danger" onclick="deleteProductAdmin('${p.id}')" title="Eliminar"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </td>
+                </tr>`;
+        });
+    }
+
+    function editProduct(id) {
+        const p = dbProducts.find(x => String(x.id) === String(id));
+        Swal.fire({
+            title: 'Editar Producto',
+            html: `<div style="text-align:left;"><label style="font-size:12px; color:#6B5B54; font-weight:600;">Nombre</label><input id="swal-name" class="swal2-input" value="${p.name}" style="margin:5px 0 15px; width:90%;"><label style="font-size:12px; color:#6B5B54; font-weight:600;">Precio ($)</label><input id="swal-price" class="swal2-input" type="number" value="${p.price}" style="margin:5px 0 15px; width:90%;"><label style="font-size:12px; color:#6B5B54; font-weight:600;">Stock</label><input id="swal-stock" class="swal2-input" type="number" value="${p.stock}" style="margin:5px 0 15px; width:90%;"><label style="font-size:12px; color:#6B5B54; font-weight:600;">Descripción</label><textarea id="swal-desc" class="swal2-input" style="height:80px; margin:5px 0 15px; width:90%;">${p.desc || ''}</textarea><label style="font-size:12px; color:#6B5B54; font-weight:600; display:block; margin-bottom:10px;">📸 Foto del Producto</label><div style="display:flex; flex-direction:column; gap:10px; align-items:center; background:var(--bg); padding:15px; border-radius:12px; margin-bottom:15px;"><img id="swal-img-preview" src="${sanitizeImgUrl(p.img)}" style="width:100px; height:100px; object-fit:cover; border-radius:10px;"><button id="swal-file-btn" type="button" style="background:var(--primary); color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;"><i class="fas fa-camera"></i> Cambiar Foto</button><input id="swal-file" type="file" accept="image/*" style="display:none;"></div><div style="margin-top:10px;"><label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ef" ${p.featured ? 'checked' : ''} style="width:18px; height:18px; accent-color:var(--primary);"><span>Producto Destacado</span></label></div></div>`,
+            confirmButtonText: '<i class="fas fa-save"></i> Guardar', confirmButtonColor: '#E8A598', background: '#FDF8F5', showCancelButton: true, cancelButtonText: 'Cancelar',
+            didOpen: () => {
+                document.getElementById('swal-file-btn').onclick = () => document.getElementById('swal-file').click();
+                document.getElementById('swal-file').onchange = async (e) => { if (e.target.files[0]) { cropTarget = 'product'; startCrop(await processImageUpload(e.target.files[0]), 1); } };
+            },
+            preConfirm: () => { const preview = document.getElementById('swal-img-preview'); return { name: document.getElementById('swal-name').value, price: parseFloat(document.getElementById('swal-price').value), stock: parseInt(document.getElementById('swal-stock').value), img: preview.dataset.base64 || p.img, desc: document.getElementById('swal-desc').value, featured: document.getElementById('ef').checked }; }
+        }).then(r => {
+            if (r.isConfirmed) {
+                const updatedData = { ...r.value };
+                if (updatedData.img.startsWith('data:')) { updatedData.imgFull = updatedData.img; }
+                Object.assign(p, updatedData);
+                gsCall('syncProducts', { products: dbProducts });
+                updateAdminPanel();
+                renderGrid('featured-products', dbProducts.filter(p => p.featured));
+                renderGrid('full-catalog', dbProducts);
+                Swal.fire({ icon: 'success', title: 'Guardado', timer: 1500, showConfirmButton: false, background: '#FDF8F5' });
+            }
+        });
+    }
+
+    function openProductModal() {
+        Swal.fire({
+            title: 'Nuevo Producto',
+            html: `<div style="text-align:left;"><input id="swal-name" class="swal2-input" placeholder="Nombre del producto" style="margin:5px 0 15px; width:90%;"><input id="swal-price" class="swal2-input" type="number" placeholder="Precio" style="margin:5px 0 15px; width:90%;"><input id="swal-stock" class="swal2-input" type="number" placeholder="Stock inicial" style="margin:5px 0 15px; width:90%;"><textarea id="swal-desc" class="swal2-input" placeholder="Descripción del producto" style="height:80px; margin:5px 0 15px; width:90%;"></textarea><label style="font-size:12px; color:#6B5B54; font-weight:600; display:block; margin-bottom:10px;">📸 Foto del Producto</label><div style="display:flex; flex-direction:column; gap:10px; align-items:center; background:var(--bg); padding:15px; border-radius:12px; margin-bottom:15px;"><img id="swal-img-preview" src="" style="width:100px; height:100px; object-fit:cover; border-radius:10px; display:none;"><button id="swal-file-btn" type="button" style="background:var(--primary); color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;"><i class="fas fa-camera"></i> Seleccionar Imagen</button><input id="swal-file" type="file" accept="image/*" style="display:none;"></div></div>`,
+            confirmButtonText: '<i class="fas fa-plus"></i> Crear Producto', confirmButtonColor: '#E8A598', background: '#FDF8F5', showCancelButton: true, cancelButtonText: 'Cancelar',
+            didOpen: () => {
+                document.getElementById('swal-file-btn').onclick = () => document.getElementById('swal-file').click();
+                document.getElementById('swal-file').onchange = async (e) => { if (e.target.files[0]) { cropTarget = 'product'; startCrop(await processImageUpload(e.target.files[0]), 1); } };
+            },
+            preConfirm: () => { const preview = document.getElementById('swal-img-preview'); if (!preview.dataset.base64) { Swal.showValidationMessage('Por favor sube una foto del producto'); return false; } return { id: Date.now(), name: document.getElementById('swal-name').value, price: parseFloat(document.getElementById('swal-price').value), stock: parseInt(document.getElementById('swal-stock').value), img: preview.dataset.base64, desc: document.getElementById('swal-desc').value, featured: false }; }
+        }).then(r => {
+            if (r.isConfirmed) {
+                const newProduct = { ...r.value };
+                newProduct.imgFull = newProduct.img;
+                dbProducts.push(newProduct);
+                gsCall('syncProducts', { products: dbProducts });
+                updateAdminPanel();
+                renderGrid('featured-products', dbProducts.filter(p => p.featured));
+                renderGrid('full-catalog', dbProducts);
+                Swal.fire({ icon: 'success', title: 'Producto creado', timer: 1500, showConfirmButton: false, background: '#FDF8F5' });
+            }
+        });
+    }
+
+    function openProductDetail(id) {
+        const p = dbProducts.find(x => String(x.id) === String(id));
+        if (!p) return;
+        const imgEl = document.getElementById('detail-img');
+        imgEl.src = sanitizeImgUrl(p.imgFull || p.img);
+        imgEl.onerror = function () { this.src = 'https://images.unsplash.com/photo-1517433670267-08bbd4be890f?w=800'; };
+        document.getElementById('detail-name').innerText = p.name;
+        document.getElementById('detail-price').innerText = '$' + p.price;
+        document.getElementById('detail-desc').innerText = p.desc || 'Delicioso producto artesanal elaborado con los mejores ingredientes.';
+        document.getElementById('detail-qty').innerText = '1';
+        document.getElementById('detail-add-btn').onclick = () => {
+            addToCart(p.id, parseInt(document.getElementById('detail-qty').innerText));
+            document.getElementById('modal-detail').classList.remove('active');
+        };
+        document.getElementById('modal-detail').classList.add('active');
+    }
+
+    async function checkout() {
+        const btn = document.querySelector('#cart-footer .btn-primary');
+        const name = document.getElementById('ship-name').value.trim();
+        const address = document.getElementById('ship-address').value.trim();
+        const phone = document.getElementById('ship-phone').value.trim();
+
+        if (!name || name.length < 2) {
+            Swal.fire({ icon: 'warning', title: 'Nombre obligatorio', text: 'Por favor ingresa tu nombre completo para el pedido.', confirmButtonColor: '#E8A598', background: '#FDF8F5' });
+            return;
+        }
+        if (!address || !phone) {
+            Swal.fire({ icon: 'warning', title: 'Datos faltantes', text: 'Por favor completa la dirección y el WhatsApp para la entrega.', confirmButtonColor: '#E8A598', background: '#FDF8F5' });
+            return;
+        }
+
+        btn.classList.add('loading');
+        const btnTextNode = btn.childNodes[btn.childNodes.length - 1];
+        if (btnTextNode.nodeType === Node.TEXT_NODE) btnTextNode.textContent = ' Procesando pedido...';
+
+        Swal.fire({ title: 'Procesando pedido...', text: 'Estamos registrando tu compra, por favor espera un momento.', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }, background: '#FDF8F5' });
+
+        try {
+            const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+            let message = `🥖 *NUEVO PEDIDO - TANIA DIAZ*%0A%0A👤 *Cliente:* ${name}%0A📍 *Dirección:* ${address}%0A📱 *WhatsApp:* ${phone}%0A%0A🛒 *PEDIDO:*%0A`;
+            cart.forEach(item => { message += `• ${item.name} x${item.qty} - $${(item.price * item.qty).toLocaleString()}%0A`; });
+            message += `%0A💰 *TOTAL: $${total.toLocaleString()}*%0A%0A¡Gracias por tu compra! 🙏`;
+
+            const orderData = {
+                cliente: name,
+                address: address,
+                phone: phone,
+                items: cart,
+                total: total
+            };
+            const result = await gsCall('saveOrder', { order: orderData });
+
+            if (result && result.success) {
+                window.open(`https://wa.me/${ADMIN_WA_NUMBER}?text=${message}`, '_blank');
+                cart = []; updateCartUI(); updateAllBadges(); toggleCart(false);
+                Swal.fire({ icon: 'success', title: '¡Pedido enviado!', html: `Se ha abierto WhatsApp para confirmar.<br><small style="opacity:0.5">Server v${result.server_version || '?'}</small>`, confirmButtonColor: '#E8A598', background: '#FDF8F5' });
+            } else {
+                throw new Error(result ? result.error : 'Fallo en el servidor');
+            }
+        } catch (err) {
+            Swal.fire({ icon: 'error', title: 'Error al procesar', text: 'No pudimos registrar tu pedido. Por favor intenta de nuevo.', confirmButtonColor: '#E8A598', background: '#FDF8F5' });
+        } finally {
+            btn.classList.remove('loading');
+            if (btnTextNode.nodeType === Node.TEXT_NODE) btnTextNode.textContent = ' Finalizar Compra';
+        }
+    }
+
+    function switchAdminTab(tab) {
+        document.getElementById('admin-tab-orders').style.display = tab === 'orders' ? 'block' : 'none';
+        document.getElementById('admin-tab-products').style.display = tab === 'products' ? 'block' : 'none';
+        document.getElementById('admin-tab-cms').style.display = tab === 'cms' ? 'block' : 'none';
+        document.querySelectorAll('.admin-tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById('btn-tab-' + tab).classList.add('active');
+        if (tab === 'cms') renderSlidesManager();
+    }
+
+    async function saveCMS() {
+        const logoPrev = document.getElementById('cms-logo-preview');
+        const flatConfig = {
+            title: document.getElementById('cms-title').value,
+            color: document.getElementById('cms-color').value,
+            logoUrl: logoPrev.dataset.base64 || cmsData.logoUrl || '',
+            footerWa: document.getElementById('cms-wa').value,
+            footerLoc: document.getElementById('cms-address').value
+        };
+
+        heroSlides.forEach((slide, index) => {
+            const i = index + 1;
+            flatConfig[`slide_${i}_title`] = slide.title || '';
+            flatConfig[`slide_${i}_subtitle`] = slide.subtitle || '';
+            flatConfig[`slide_${i}_image`] = slide.image || '';
+            flatConfig[`slide_${i}_buttonText`] = slide.buttonText || 'Ver Tienda';
+            flatConfig[`slide_${i}_buttonLink`] = slide.buttonLink || 'tienda';
+        });
+        flatConfig['slides_count'] = heroSlides.length;
+
+        Swal.fire({ title: 'Guardando configuración', text: 'Esto puede tardar unos segundos...', allowOutsideClick: false, didOpen: () => Swal.showLoading(), background: '#FDF8F5' });
+
+        const result = await gsCall('saveSettings', { config: flatConfig });
+        if (result) {
+            cmsData = flatConfig;
+            applyCMS();
+            renderHeroSlides();
+            Swal.fire({ icon: 'success', title: '¡Guardado!', text: 'La configuración se guardó correctamente', confirmButtonColor: '#E8A598', background: '#FDF8F5' });
+        } else {
+            Swal.fire({ icon: 'error', title: 'Error al conectar', text: 'Verifica tu conexión y el SCRIPT_URL', confirmButtonColor: '#E8A598' });
+        }
+    }
+
+    function applyCMS() {
+        if (!cmsData) return;
+        if (cmsData.title) document.querySelectorAll('.logo-text').forEach(el => el.innerText = cmsData.title);
+        if (cmsData.logoUrl) {
+            const headerLogo = document.getElementById('header-logo');
+            if (headerLogo) { headerLogo.src = sanitizeImgUrl(cmsData.logoUrl); headerLogo.style.display = 'block'; }
+        } else {
+            const headerLogo = document.getElementById('header-logo');
+            if (headerLogo) headerLogo.style.display = 'none';
+        }
+
+        if (cmsData.color) {
+            const colorStr = String(cmsData.color);
+            document.documentElement.style.setProperty('--primary', colorStr);
+            document.documentElement.style.setProperty('--primary-dark', adjustColor(colorStr, -20));
+            document.documentElement.style.setProperty('--primary-light', adjustColor(colorStr, 40));
+        }
+
+        if (cmsData.footerWa) {
+            const waStr = String(cmsData.footerWa);
+            ADMIN_WA_NUMBER = waStr.startsWith('52') ? waStr : '52' + waStr;
+            const contactWa = document.getElementById('contact-wa');
+            if (contactWa) contactWa.innerText = waStr;
+            const contactWaLink = document.getElementById('contact-wa-link');
+            if (contactWaLink) contactWaLink.href = `https://wa.me/${ADMIN_WA_NUMBER}`;
+        }
+
+        if (cmsData.footerLoc) {
+            const contactLoc = document.getElementById('contact-loc');
+            if (contactLoc) contactLoc.innerText = cmsData.footerLoc;
+        }
+
+        const count = parseInt(cmsData.slides_count) || 0;
+        if (count > 0) {
+            const newSlides = [];
+            for (let i = 1; i <= count; i++) {
+                newSlides.push({
+                    id: Date.now() + i,
+                    title: cmsData[`slide_${i}_title`] || 'Sin título',
+                    subtitle: cmsData[`slide_${i}_subtitle`] || '',
+                    image: cmsData[`slide_${i}_image`] || '',
+                    buttonText: cmsData[`slide_${i}_buttonText`] || 'Ver Tienda',
+                    buttonLink: cmsData[`slide_${i}_buttonLink`] || 'tienda'
+                });
+            }
+            heroSlides = newSlides;
+        }
+    }
+
+    function adjustColor(color, amount) {
+        try {
+            const colorStr = String(color).replace('#', '');
+            const num = parseInt(colorStr, 16);
+            if (isNaN(num)) return color;
+            const r = Math.min(255, Math.max(0, (num >> 16) + amount));
+            const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
+            const b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
+            return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+        } catch (e) { return color; }
+    }
+
+    const GS_VERSION_REQUIRED = "3.3.0-FINAL";
+
+    async function init() {
+        try {
+            const test = await gsCall('get', { p: 'test' });
+            if (test && test.version !== GS_VERSION_REQUIRED) {
+                Swal.fire({
+                    icon: 'error', title: 'SERVIDOR OBSOLETO',
+                    html: `Tu Apps Script no está actualizado.<br><br><b>Detectada:</b> <span style="color:#d33;">${test.version || 'Vieja'}</span><br><b>Necesaria:</b> <span style="color:#28a745;">${GS_VERSION_REQUIRED}</span><br><br>Haz un <b>Nuevo Despliegue</b> y actualiza el SCRIPT_URL si es necesario.`,
+                    confirmButtonColor: '#E8A598', background: '#FDF8F5', allowOutsideClick: false
+                });
+            }
+        } catch (e) { }
+
+        try {
+            const productsRes = await gsCall('get', { p: 'products' });
+            dbProducts = Array.isArray(productsRes) ? productsRes : [];
+        } catch (e) { dbProducts = []; }
+
+        try {
+            const ordersRes = await gsCall('get', { p: 'orders' });
+            mockOrders = Array.isArray(ordersRes) ? ordersRes : [];
+        } catch (e) { mockOrders = []; }
+
+        try {
+            const settingsRes = await gsCall('get', { p: 'settings' });
+            cmsData = settingsRes || {};
+            applyCMS();
+            renderHeroSlides();
+            if (cmsData) {
+                const titleInput = document.getElementById('cms-title');
+                const colorInput = document.getElementById('cms-color');
+                const waInput = document.getElementById('cms-wa');
+                const addressInput = document.getElementById('cms-address');
+                if (titleInput) titleInput.value = cmsData.title || '';
+                if (colorInput) colorInput.value = cmsData.color || '#E8A598';
+                if (waInput) waInput.value = cmsData.footerWa || '';
+                if (addressInput) addressInput.value = cmsData.footerLoc || '';
+                if (cmsData.logoUrl) { const lp = document.getElementById('cms-logo-preview'); if (lp) { lp.src = cmsData.logoUrl; lp.style.display = 'block'; } }
+            }
+        } catch (e) { renderHeroSlides(); }
+
+        renderGrid('featured-products', dbProducts.filter(p => p && p.featured));
+        renderGrid('full-catalog', dbProducts);
+        updateCartUI();
+    }
+
+    function deleteProductAdmin(id) {
+        Swal.fire({ title: '¿Eliminar producto?', text: 'Esta acción no se puede deshacer', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar', confirmButtonColor: '#E57373', background: '#FDF8F5' }).then(r => {
+            if (r.isConfirmed) { gsCall('deleteProduct', { productId: id }); dbProducts = dbProducts.filter(p => String(p.id) !== String(id)); updateAdminPanel(); renderGrid('featured-products', dbProducts.filter(p => p.featured)); renderGrid('full-catalog', dbProducts); Swal.fire({ icon: 'success', title: 'Eliminado', timer: 1500, showConfirmButton: false, background: '#FDF8F5' }); }
+        });
+    }
+
+    function deleteOrderAdmin(id) {
+        Swal.fire({ title: '¿Eliminar pedido?', text: 'Esta acción no se puede deshacer', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar', confirmButtonColor: '#E57373', background: '#FDF8F5' }).then(async r => {
+            if (r.isConfirmed) { await gsCall('deleteOrder', { orderId: id }); mockOrders = mockOrders.filter(o => String(getV(o, ['id', 'nro'])) !== String(id)); updateAdminPanel(); Swal.fire({ icon: 'success', title: 'Pedido eliminado', timer: 1500, showConfirmButton: false, background: '#FDF8F5' }); }
+        });
+    }
+
+    async function handleCmsFile(input, target) { if (input.files[0]) { cropTarget = target; startCrop(await processImageUpload(input.files[0]), target === 'logo' ? 1 : (16 / 9)); } }
+    function processImageUpload(file) { return new Promise((resolve) => { const reader = new FileReader(); reader.onload = (e) => resolve(e.target.result); reader.readAsDataURL(file); }); }
+    function startCrop(base64, ratio = 1) { document.getElementById('cropper-modal').style.display = 'flex'; const img = document.getElementById('cropper-image'); img.src = base64; if (cropper) cropper.destroy(); cropper = new Cropper(img, { aspectRatio: ratio, viewMode: 1 }); }
+    function cancelCrop() { document.getElementById('cropper-modal').style.display = 'none'; if (cropper) cropper.destroy(); cropTarget = null; }
+    function finishCrop() {
+        const canvas = cropper.getCroppedCanvas({ width: 1200, height: 1200 });
+        const base64 = canvas.toDataURL('image/jpeg', 0.85);
+        if (cropTarget === 'logo') { const p = document.getElementById('cms-logo-preview'); p.src = base64; p.dataset.base64 = base64; p.style.display = 'block'; }
+        else if (cropTarget === 'slide') { const p = document.getElementById('slide-img-preview'); if (p) { p.src = base64; p.dataset.base64 = base64; p.style.display = 'block'; } }
+        else { const preview = document.getElementById('swal-img-preview'); if (preview) { preview.src = base64; preview.dataset.base64 = base64; preview.style.display = 'block'; } }
+        cancelCrop();
+    }
+
+    window.onload = () => { init().catch(e => { console.error("Error:", e); renderHeroSlides(); }); };
+</script>

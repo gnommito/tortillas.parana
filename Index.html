@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TANIA DIAZ - Panadería & Pastelería Artesanal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+
+    <?!= include('Styles'); ?>
+</head>
+
+<body>
+    <div class="overlay" id="overlay" onclick="toggleCart(false)"></div>
+
+    <header id="header">
+        <div class="container nav-bar">
+            <div class="logo-container" onclick="showView('inicio')">
+                <img id="header-logo" src="" style="height: 40px; display: none; object-fit: contain;">
+                <span class="logo-text">TANIA DIAZ</span>
+            </div>
+            <ul class="nav-links">
+                <li><a onclick="showView('inicio')" id="nav-inicio" class="active">Inicio</a></li>
+                <li><a onclick="showView('tienda')" id="nav-tienda">Tienda</a></li>
+                <li><a onclick="showView('contacto')" id="nav-contacto">Contacto</a></li>
+                <li id="admin-nav-item" style="display:none;">
+                    <a onclick="showView('admin')" id="nav-admin"
+                        style="color:var(--primary); font-weight:700;">Gestión</a>
+                </li>
+                <li class="cart-icon" onclick="toggleCart(true)">
+                    <i class="fas fa-shopping-bag"></i>
+                    <span id="cart-count">0</span>
+                </li>
+            </ul>
+        </div>
+    </header>
+
+    <main>
+        <!-- Vista Inicio -->
+        <div id="view-inicio" class="view active">
+            <div class="swiper hero-swiper" id="hero-swiper">
+                <div class="swiper-wrapper" id="hero-slides"></div>
+                <div class="swiper-pagination"></div>
+                <div class="swiper-button-next"></div>
+                <div class="swiper-button-prev"></div>
+            </div>
+
+            <section class="container">
+                <div class="section-header">
+                    <h2 class="section-title">Nuestros Destacados</h2>
+                    <p class="section-subtitle">Los favoritos de nuestros clientes</p>
+                </div>
+                <div class="product-grid" id="featured-products"></div>
+            </section>
+
+            <section class="container about-section">
+                <div class="about-grid">
+                    <div class="about-img-container">
+                        <img src="https://images.unsplash.com/photo-1509440159596-0249088772ff?w=1000" class="about-img"
+                            alt="Proceso Artesanal">
+                        <div class="about-badge">
+                            <i class="fas fa-certificate"></i>
+                            <span>100%<br>Artesanal</span>
+                        </div>
+                    </div>
+                    <div class="about-content">
+                        <h2 class="section-title" style="text-align: left; margin: 0;">Nuestra Esencia</h2>
+                        <h3 class="about-tagline">El secreto está en el tiempo y el corazón</h3>
+                        <p class="about-text">
+                            En Tanía Díaz, honramos el arte de la panadería tradicional. Cada una de nuestras creaciones
+                            pasa por un proceso de fermentación lenta, utilizando harinas seleccionadas y técnicas que
+                            han pasado de generación en generación.
+                        </p>
+                        <div class="about-features">
+                            <div class="feature-item">
+                                <i class="fas fa-seedling"></i>
+                                <div>
+                                    <h4>Ingredientes Puros</h4>
+                                    <p>Seleccionamos materias primas de la más alta calidad para garantizar un sabor
+                                        inigualable.</p>
+                                </div>
+                            </div>
+                            <div class="feature-item">
+                                <i class="fas fa-temperature-high"></i>
+                                <div>
+                                    <h4>Horneado Perfecto</h4>
+                                    <p>Controlamos cada detalle para lograr esa textura crujiente y miga esponjosa que
+                                        amas.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="btn-primary" style="width: fit-content; padding: 18px 40px;"
+                            onclick="showView('tienda')">
+                            Ver todos los productos <i class="fas fa-arrow-right"
+                                style="margin-left: 10px; font-size: 14px;"></i>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <div class="staff-access">
+                <a onclick="loginAdmin()" class="staff-link">
+                    <i class="fas fa-lock"></i> Acceso Staff
+                </a>
+            </div>
+        </div>
+
+        <!-- Vista Tienda -->
+        <div id="view-tienda" class="view container">
+            <div class="section-header">
+                <h2 class="section-title">Nuestro Catálogo</h2>
+                <p class="section-subtitle">Descubre todos nuestros productos artesanales</p>
+            </div>
+            <div class="product-grid" id="full-catalog"></div>
+        </div>
+
+        <!-- Vista Contacto -->
+        <div id="view-contacto" class="view container">
+            <div class="section-header">
+                <h2 class="section-title">Contacto</h2>
+                <p class="section-subtitle">Estamos aquí para atenderte</p>
+            </div>
+            <div class="cms-card" style="max-width: 600px; margin: 0 auto;">
+                <div style="text-align: center; padding: 40px;">
+                    <i class="fas fa-map-marker-alt"
+                        style="font-size: 48px; color: var(--primary); margin-bottom: 24px;"></i>
+                    <h3 style="margin-bottom: 16px;">Visítanos</h3>
+                    <p id="contact-loc" style="color: var(--text-light); margin-bottom: 32px;">Dirección de tu panadería
+                        aquí</p>
+                    <a id="contact-wa-link" href="#" target="_blank" style="text-decoration: none; color: inherit;">
+                        <i class="fab fa-whatsapp"
+                            style="font-size: 48px; color: var(--success); margin-bottom: 24px;"></i>
+                        <h3 style="margin-bottom: 16px;">WhatsApp</h3>
+                        <p id="contact-wa" style="color: var(--text-light); margin-bottom: 32px;">+52 000 000 0000</p>
+                    </a>
+                    <i class="fas fa-clock" style="font-size: 48px; color: var(--warning); margin-bottom: 24px;"></i>
+                    <h3 style="margin-bottom: 16px;">Horario</h3>
+                    <p style="color: var(--text-light);">Lunes a Sábado: 7:00 AM - 8:00 PM<br>Domingo: 8:00 AM - 2:00 PM
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Vista Admin -->
+        <div id="view-admin" class="view container">
+            <div class="section-header">
+                <h2 class="section-title">Panel de Control</h2>
+                <p class="section-subtitle">Gestión de pedidos, inventario y diseño</p>
+            </div>
+
+            <div class="admin-tabs">
+                <button class="admin-tab-btn active" id="btn-tab-orders" onclick="switchAdminTab('orders')">
+                    <i class="fas fa-clipboard-list"></i> Pedidos
+                </button>
+                <button class="admin-tab-btn" id="btn-tab-products" onclick="switchAdminTab('products')">
+                    <i class="fas fa-boxes"></i> Inventario
+                </button>
+                <button class="admin-tab-btn" id="btn-tab-cms" onclick="switchAdminTab('cms')">
+                    <i class="fas fa-paint-brush"></i> Diseño
+                </button>
+                <button class="admin-tab-btn" style="background: var(--danger); color: white;"
+                    onclick="location.reload()">
+                    <i class="fas fa-sign-out-alt"></i> Cerrar
+                </button>
+            </div>
+
+            <!-- Tab Pedidos -->
+            <div id="admin-tab-orders">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <div class="admin-dashboard" style="flex: 1; margin: 0; padding-right: 20px;">
+                        <div class="stat-card">
+                            <h4><i class="fas fa-dollar-sign"></i> Ventas Totales</h4>
+                            <p id="stat-total">$0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h4><i class="fas fa-shopping-cart"></i> Total Pedidos</h4>
+                            <p id="stat-orders">0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h4><i class="fas fa-exclamation-triangle"></i> Sin Stock</h4>
+                            <p id="stat-low-stock">0</p>
+                        </div>
+                    </div>
+                    <div class="filter-area"
+                        style="background: white; padding: 15px; border-radius: 12px; box-shadow: var(--shadow-sm);">
+                        <label
+                            style="font-size: 13px; font-weight: 600; color: var(--text-light); display: block; margin-bottom: 8px;">Filtrar
+                            por Estado</label>
+                        <select id="status-filter" onchange="updateAdminPanel()"
+                            style="padding: 10px; border: 1px solid var(--primary-light); border-radius: 8px; font-family: inherit; font-size: 14px; outline: none;">
+                            <option value="todos">Todos los Pedidos</option>
+                            <option value="Pendiente">Pendientes</option>
+                            <option value="Entregado">Entregados</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="admin-table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Cliente</th>
+                                <th>WhatsApp</th>
+                                <th>Dirección</th>
+                                <th>Pedido</th>
+                                <th>Total</th>
+                                <th>Fecha</th>
+                                <th>Estado</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-orders-list"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab Productos -->
+            <div id="admin-tab-products" style="display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
+                    <h3 style="font-size: 1.25rem;">Gestión de Productos</h3>
+                    <button class="btn-primary" style="width:auto;" onclick="openProductModal()">
+                        <i class="fas fa-plus"></i> Nuevo Producto
+                    </button>
+                </div>
+                <div class="admin-table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Imagen</th>
+                                <th>Nombre</th>
+                                <th>Precio</th>
+                                <th>Stock</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-products-list"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab CMS -->
+            <div id="admin-tab-cms" style="display:none;">
+                <div class="cms-card">
+                    <h3 style="margin-bottom: 8px;">Configuración de la Web</h3>
+                    <p style="color: var(--text-light); margin-bottom: 24px;">Personaliza la apariencia de tu tienda</p>
+
+                    <div class="cms-grid">
+                        <div>
+                            <label class="form-label">Nombre de la Panadería</label>
+                            <input type="text" id="cms-title" class="form-input" placeholder="TANIA DIAZ">
+                        </div>
+                        <div>
+                            <label class="form-label">Color de Marca</label>
+                            <input type="color" id="cms-color"
+                                style="width:100%; height:48px; border:none; padding:4px; background:none; cursor:pointer; border-radius: var(--radius-sm);">
+                        </div>
+                        <div>
+                            <label class="form-label"><i class="fas fa-image"></i> Logo de la Web</label>
+                            <div class="file-upload-area">
+                                <img id="cms-logo-preview" src="" class="file-preview" style="display:none;">
+                                <button class="btn-upload" onclick="document.getElementById('cms-logo-file').click()">
+                                    <i class="fas fa-upload"></i> Subir Logo
+                                </button>
+                                <input type="file" id="cms-logo-file" accept="image/*" style="display:none;"
+                                    onchange="handleCmsFile(this, 'logo')">
+                            </div>
+                        </div>
+                    </div>
+
+                    <h4 class="cms-section-title"><i class="fas fa-images"></i> Carrusel de Inicio</h4>
+                    <p style="color: var(--text-light); font-size: 13px; margin-bottom: 16px;">
+                        <i class="fas fa-info-circle"></i> Arrastra los slides para reordenar. Máximo 5 slides.
+                    </p>
+                    <div class="slides-container" id="slides-container"></div>
+                    <button class="btn-add-slide" onclick="addNewSlide()">
+                        <i class="fas fa-plus-circle"></i> Agregar Nuevo Slide
+                    </button>
+
+                    <h4 class="cms-section-title"><i class="fas fa-address-card"></i> Información de Contacto</h4>
+                    <div class="cms-grid">
+                        <div>
+                            <label class="form-label">WhatsApp de Pedidos</label>
+                            <input type="text" id="cms-wa" class="form-input" placeholder="521234567890">
+                        </div>
+                        <div>
+                            <label class="form-label">Dirección Física</label>
+                            <input type="text" id="cms-address" class="form-input" placeholder="Calle Principal #123">
+                        </div>
+                    </div>
+
+                    <button class="btn-primary" style="margin-top: 40px; width: 100%;" onclick="saveCMS()">
+                        <i class="fas fa-save"></i> Guardar Configuración
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cropper Modal -->
+        <div id="cropper-modal">
+            <div class="cropper-container">
+                <h3 style="margin-bottom: 16px;"><i class="fas fa-crop"></i> Ajustar Imagen</h3>
+                <div class="cropper-area"><img id="cropper-image" src="" style="max-width:100%; display:block;"></div>
+                <div class="cropper-actions">
+                    <button class="btn-primary" style="background: #666;" onclick="cancelCrop()">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                    <button class="btn-primary" onclick="finishCrop()">
+                        <i class="fas fa-check"></i> Confirmar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Cart Drawer -->
+    <div class="drawer" id="cart-drawer">
+        <div class="drawer-header">
+            <h2><i class="fas fa-shopping-bag"></i> Tu Carrito</h2>
+            <button class="drawer-close" onclick="toggleCart(false)"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="cart-items">
+            <div class="cart-empty">
+                <i class="fas fa-shopping-basket"></i>
+                <p>Tu carrito está vacío</p>
+                <p style="font-size: 14px; margin-top: 8px;">¡Agrega algunos productos!</p>
+            </div>
+        </div>
+        <div id="shipping-details" style="display:none;">
+            <div class="form-group"><input type="text" id="ship-name" class="form-input" placeholder="Nombre completo">
+            </div>
+            <div class="form-group"><input type="text" id="ship-address" class="form-input"
+                    placeholder="Dirección de entrega"></div>
+            <div class="form-group"><input type="tel" id="ship-phone" class="form-input" placeholder="WhatsApp"></div>
+        </div>
+        <div class="cart-footer" id="cart-footer" style="display:none;">
+            <div class="cart-total-row">
+                <span class="cart-total-label">Total a pagar:</span>
+                <span class="cart-total-value" id="cart-total">$0</span>
+            </div>
+            <button class="btn-primary" style="width: 100%;" onclick="checkout()">
+                <div class="btn-loader"></div>
+                <i class="fab fa-whatsapp"></i> Finalizar Compra
+            </button>
+        </div>
+    </div>
+
+    <!-- Product Detail Modal -->
+    <div id="modal-detail" class="modal-detail" onclick="this.classList.remove('active')">
+        <div class="modal-detail-content" onclick="event.stopPropagation()">
+            <button class="close-detail" onclick="document.getElementById('modal-detail').classList.remove('active')">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="detail-img-side"><img id="detail-img" src="" alt=""></div>
+            <div class="detail-info-side">
+                <h2 class="detail-name" id="detail-name">Producto</h2>
+                <h3 class="detail-price" id="detail-price">$0</h3>
+                <p class="detail-desc" id="detail-desc"></p>
+                <div class="qty-selector" style="width:fit-content; margin-bottom: 24px;">
+                    <button class="qty-btn" onclick="changeQtyUI(this,-1,true)"><i class="fas fa-minus"></i></button>
+                    <span class="qty-val" id="detail-qty">1</span>
+                    <button class="qty-btn" onclick="changeQtyUI(this,1,true)"><i class="fas fa-plus"></i></button>
+                </div>
+                <button class="btn-primary" id="detail-add-btn" style="width: 100%;">
+                    <i class="fas fa-cart-plus"></i> Añadir al Carrito
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <?!= include('Scripts'); ?>
+</body>
+
+</html>
